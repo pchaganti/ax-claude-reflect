@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": ["~/.claude/scripts/capture-learning.sh"]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": ["~/.claude/scripts/check-learnings.sh"]
+      }
+    ]
+  }
+}

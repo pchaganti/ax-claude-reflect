@@ -1,0 +1,38 @@
+#!/bin/bash
+# Checks if a git commit just happened and reminds about /learn
+# Used by PostToolUse hook for Bash tool
+
+QUEUE_FILE="$HOME/.claude/learnings-queue.json"
+
+# Read JSON from stdin into variable
+INPUT="$(cat -)"
+
+# Exit if no input
+[ -z "$INPUT" ] && exit 0
+
+# Extract the command that was executed
+COMMAND="$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)"
+
+# Exit if no command
+[ -z "$COMMAND" ] && exit 0
+
+# Check if it was a git commit command (not amend, not git commit without actual commit)
+if [[ "$COMMAND" == *"git commit"* ]]; then
+  echo ""
+  echo "========================================"
+  echo "  Git commit detected!"
+
+  # Check queue
+  if [ -f "$QUEUE_FILE" ]; then
+    COUNT=$(jq 'length' "$QUEUE_FILE" 2>/dev/null || echo 0)
+    if [ "$COUNT" -gt 0 ]; then
+      echo "  You have $COUNT queued learning(s)."
+    fi
+  fi
+
+  echo "  Feature complete? Run /learn to capture learnings."
+  echo "========================================"
+  echo ""
+fi
+
+exit 0
