@@ -7,6 +7,9 @@ allowed-tools: Read, Edit, Write, Glob, Bash, Grep, AskUserQuestion
 - `--dry-run`: Preview all changes without prompting or writing.
 - `--scan-history`: Scan ALL past sessions for corrections (useful for first-time setup or cold start).
 - `--days N`: Limit history scan to last N days (default: 30). Only used with `--scan-history`.
+- `--targets`: Show detected AI assistant config files and exit.
+- `--review`: Show learnings with stale/decayed entries for review.
+- `--dedupe`: Scan CLAUDE.md for similar entries and propose consolidations.
 
 ## Context
 - Project CLAUDE.md: @CLAUDE.md
@@ -14,7 +17,162 @@ allowed-tools: Read, Edit, Write, Glob, Bash, Grep, AskUserQuestion
 - Learnings queue: !`cat ~/.claude/learnings-queue.json 2>/dev/null || echo "[]"`
 - Current project: !`pwd`
 
+## Multi-Target Export
+
+Claude-reflect syncs learnings to CLAUDE.md and AGENTS.md (the emerging cross-tool standard).
+
+**Supported Targets:**
+
+| Target | File Path | Format | Notes |
+|--------|-----------|--------|-------|
+| **Claude Code** | `~/.claude/CLAUDE.md`, `./CLAUDE.md` | Markdown | Always enabled |
+| **AGENTS.md** | `./AGENTS.md` | Markdown | Industry standard (Codex, Cursor, Aider, Jules, Zed, Factory) |
+
+**Detection Logic:**
+```bash
+# Always enabled
+~/.claude/CLAUDE.md
+./CLAUDE.md (if exists)
+
+# Only if file exists
+test -f AGENTS.md && echo "AGENTS.md"
+```
+
+**Note on Confidence & Decay:**
+- Confidence scores help prioritize learnings during `/reflect` review
+- Decay applies to **queue items only** — if a learning sits unprocessed for too long, it's flagged as stale
+- Once applied to CLAUDE.md, entries are permanent (edit manually to remove)
+
 ## Your Task
+
+### Handle --targets Argument
+
+**If user passed `--targets`:**
+
+Detect and display all AI assistant config files in the current project:
+
+```bash
+echo "=== Detected AI Assistant Configs ==="
+echo ""
+echo "✓ ~/.claude/CLAUDE.md (Claude Code - always enabled)"
+test -f CLAUDE.md && echo "✓ ./CLAUDE.md (Project)" || echo "✗ ./CLAUDE.md (not found)"
+test -f AGENTS.md && echo "✓ AGENTS.md (Codex, Cursor, Aider, Jules, Zed)" || echo "✗ AGENTS.md (not found)"
+```
+
+Then display summary:
+```
+═══════════════════════════════════════════════════════════
+DETECTED TARGETS
+═══════════════════════════════════════════════════════════
+
+  ✓ ~/.claude/CLAUDE.md    (Claude Code - always enabled)
+  ✓ ./CLAUDE.md            (Project)
+  ✗ AGENTS.md              (not found)
+
+To enable AGENTS.md (syncs to Codex, Cursor, Aider, Jules, Zed, Factory):
+  touch AGENTS.md
+
+═══════════════════════════════════════════════════════════
+```
+
+Exit after showing targets (don't process learnings).
+
+### Handle --review Argument
+
+**If user passed `--review`:**
+
+Show learnings with their confidence and decay status:
+
+```bash
+cat ~/.claude/learnings-queue.json | jq -r '.[] | "\(.timestamp) | conf:\(.confidence // 0.5) | decay:\(.decay_days // 90)d | \(.message | .[0:60])"'
+```
+
+Display table of learnings with decay status:
+```
+═══════════════════════════════════════════════════════════
+LEARNINGS REVIEW — Confidence & Decay Status
+═══════════════════════════════════════════════════════════
+
+┌────┬──────────┬────────┬────────────────────────────────┐
+│ #  │ Conf.    │ Decay  │ Learning                       │
+├────┼──────────┼────────┼────────────────────────────────┤
+│ 1  │ 0.90 ✓   │ 120d   │ Use gpt-5.1 for reasoning     │
+│ 2  │ 0.60     │ 60d ⚠  │ Enable flag X for API calls   │
+│ 3  │ 0.40 ⚠   │ 30d ⚠  │ Consider using batch mode     │
+└────┴──────────┴────────┴────────────────────────────────┘
+
+Legend: ✓ High confidence  ⚠ Low confidence/Near decay
+═══════════════════════════════════════════════════════════
+```
+
+Exit after showing review (don't process learnings).
+
+### Handle --dedupe Argument
+
+**If user passed `--dedupe`:**
+
+Scan existing CLAUDE.md files for similar entries that could be consolidated.
+
+**1. Read both CLAUDE.md files:**
+```bash
+cat ~/.claude/CLAUDE.md
+cat CLAUDE.md 2>/dev/null
+```
+
+**2. Extract all bullet points:**
+Look for lines starting with `- ` under section headers.
+
+**3. Analyze for semantic similarity:**
+Group entries that:
+- Reference the same tool/model/concept
+- Give overlapping or redundant advice
+- Could be merged without losing information
+
+**4. Present consolidation proposals:**
+```
+═══════════════════════════════════════════════════════════
+CLAUDE.MD DEDUPLICATION SCAN
+═══════════════════════════════════════════════════════════
+
+Found 2 groups of similar entries:
+
+Group 1 (Global CLAUDE.md):
+  Line 45: "- Use gpt-5.1 for complex tasks"
+  Line 52: "- Prefer gpt-5.1 for reasoning"
+  → Proposed: "- Use gpt-5.1 for complex reasoning tasks"
+
+Group 2 (Project CLAUDE.md):
+  Line 12: "- Always use venv"
+  Line 28: "- Create virtual environment for Python"
+  → Proposed: "- Use venv for Python projects"
+
+No duplicates: 23 entries are unique
+
+═══════════════════════════════════════════════════════════
+```
+
+**5. Use AskUserQuestion:**
+```json
+{
+  "questions": [{
+    "question": "Apply deduplication to CLAUDE.md files?",
+    "header": "Dedupe",
+    "multiSelect": false,
+    "options": [
+      {"label": "Apply all consolidations", "description": "Merge 2 groups, remove 4 redundant lines"},
+      {"label": "Review each group", "description": "Decide per group"},
+      {"label": "Cancel", "description": "Keep files unchanged"}
+    ]
+  }]
+}
+```
+
+**6. Apply changes:**
+- Use Edit tool to replace redundant entries with consolidated versions
+- Remove duplicate lines
+- Preserve section structure
+
+Exit after deduplication (don't process queue).
 
 ### First-Run Detection (Per-Project)
 
@@ -279,6 +437,75 @@ Get current project path. For each queue item, compare `item.project` with curre
 - Specific tool/DB/service names → PROJECT-SPECIFIC
 - File paths → PROJECT-SPECIFIC
 
+### Step 3.5: Semantic Deduplication (Within Queue)
+
+Before checking against CLAUDE.md, consolidate similar learnings within the current batch.
+
+**3.5a. Group by semantic similarity:**
+
+Analyze all learnings in the working list. Look for entries that:
+- Reference the same tool, model, or concept
+- Give similar advice (even with different wording)
+- Could be consolidated into a single, clearer entry
+
+**Example - Before consolidation:**
+```
+1. "Use gpt-5.1 for complex tasks"
+2. "Prefer gpt-5.1 over gpt-5 for reasoning"
+3. "gpt-5.1 is better for hard problems"
+```
+
+**Example - After consolidation:**
+```
+1. "Use gpt-5.1 for complex reasoning (replaces gpt-5)"
+```
+
+**3.5b. Present consolidation proposals:**
+
+If similar learnings are detected, show:
+```
+═══════════════════════════════════════════════════════════
+SIMILAR LEARNINGS DETECTED
+═══════════════════════════════════════════════════════════
+
+These 3 learnings appear related:
+  #2: "Use gpt-5.1 for complex tasks"
+  #5: "Prefer gpt-5.1 over gpt-5 for reasoning"
+  #7: "gpt-5.1 is better for hard problems"
+
+Proposed consolidation:
+  → "Use gpt-5.1 for complex reasoning tasks (replaces gpt-5)"
+
+═══════════════════════════════════════════════════════════
+```
+
+**3.5c. Use AskUserQuestion for consolidation:**
+
+```json
+{
+  "questions": [{
+    "question": "Consolidate these 3 similar learnings into one?",
+    "header": "Dedupe",
+    "multiSelect": false,
+    "options": [
+      {"label": "Yes, consolidate", "description": "Merge into: 'Use gpt-5.1 for complex reasoning tasks'"},
+      {"label": "Keep separate", "description": "Add all 3 as individual entries"},
+      {"label": "Edit consolidation", "description": "Let me modify the merged text"}
+    ]
+  }]
+}
+```
+
+**3.5d. Consolidation rules:**
+- Keep highest confidence score from the group
+- Combine decay_days (use longest)
+- Mark source as "consolidated"
+- If user chooses "Edit", allow them to provide custom text
+
+**3.5e. Skip if no duplicates:**
+- If all learnings are semantically distinct, proceed to Step 4
+- Only show consolidation UI when similar entries are detected
+
 ### Step 4: Duplicate Detection with Line Numbers
 
 For each learning kept after filtering, search BOTH CLAUDE.md files:
@@ -458,9 +685,40 @@ Skipped: [N] learnings (including [M] from other projects)
 ### Step 7: Apply Changes
 
 Only after final confirmation:
+
+**7a. Apply to CLAUDE.md (Primary Targets):**
 1. Read current CLAUDE.md files
 2. Use Edit tool with precise old_string from detected line numbers
 3. For new entries, add after the relevant section header
+
+**7b. Apply to AGENTS.md (if exists):**
+
+Check if AGENTS.md exists:
+```bash
+test -f AGENTS.md && echo "AGENTS.md found"
+```
+
+If AGENTS.md exists, apply the SAME learnings using this format:
+
+```markdown
+## Claude-Reflect Learnings
+
+<!-- Auto-generated by claude-reflect. Do not edit this section manually. -->
+
+### Model Preferences
+- Use gpt-5.1 for reasoning tasks
+
+### Tool Usage
+- Use local database cache to minimize API calls
+
+<!-- End claude-reflect section -->
+```
+
+**Update Strategy:**
+- Look for existing `<!-- Auto-generated by claude-reflect` marker
+- If found: REPLACE the entire section (from marker to `<!-- End claude-reflect section -->`)
+- If not found: APPEND section at the end of the file
+- Always preserve user's existing content outside the marked section
 
 ### Step 8: Clear Queue
 
@@ -474,8 +732,10 @@ echo "[]" > ~/.claude/learnings-queue.json
 ════════════════════════════════════════════════════════════
 DONE: Applied [N] learnings
 ════════════════════════════════════════════════════════════
-  Project: [N] entries added/updated
-  Global:  [N] entries added/updated
+  ✓ ~/.claude/CLAUDE.md    [N] entries
+  ✓ ./CLAUDE.md            [N] entries
+  ✓ AGENTS.md              [N] entries (if exists)
+
   Skipped: [N]
 ════════════════════════════════════════════════════════════
 ```

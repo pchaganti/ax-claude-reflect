@@ -1,6 +1,6 @@
 # claude-reflect
 
-A self-learning system for Claude Code that captures your corrections and updates CLAUDE.md automatically.
+A self-learning system for Claude Code that captures corrections, positive feedback, and preferences — then syncs them to CLAUDE.md and AGENTS.md.
 
 ## What it does
 
@@ -43,6 +43,9 @@ After installation, **restart Claude Code** (exit and reopen). Then hooks auto-c
 | `/reflect` | Process queued learnings with human review |
 | `/reflect --scan-history` | Scan ALL past sessions for missed learnings |
 | `/reflect --dry-run` | Preview changes without applying |
+| `/reflect --targets` | Show detected config files (CLAUDE.md, AGENTS.md) |
+| `/reflect --review` | Show queue with confidence scores and decay status |
+| `/reflect --dedupe` | Find and consolidate similar entries in CLAUDE.md |
 | `/skip-reflect` | Discard all queued learnings |
 | `/view-queue` | View pending learnings without processing |
 
@@ -64,15 +67,24 @@ Hooks run automatically to detect and queue corrections:
 
 Run `/reflect` to review and apply queued learnings to CLAUDE.md.
 
-### Correction Detection
+### Pattern Detection
 
-The capture hook detects patterns like:
+The capture hook detects corrections AND positive feedback:
+
+**Corrections** (what went wrong):
 - `"no, use X"` / `"don't use Y"`
 - `"actually..."` / `"I meant..."`
-- `"use X not Y"` / `"X instead of Y"`
-- `"remember:"` (explicit learning marker)
+- `"use X not Y"` / `"that's wrong"`
 
-Tool rejections (when you stop Claude mid-action) are the highest confidence signals.
+**Positive patterns** (what works):
+- `"Perfect!"` / `"Exactly right"`
+- `"That's what I wanted"` / `"Great approach"`
+- `"Keep doing this"` / `"Nailed it"`
+
+**Explicit markers**:
+- `"remember:"` — highest confidence
+
+Each captured learning has a **confidence score** (0.60-0.95) based on pattern strength. Higher confidence = more likely to be a real learning.
 
 ### Human Review
 
@@ -96,11 +108,14 @@ You choose:
 - **Select which** - Pick specific learnings
 - **Review details** - See full context before deciding
 
-### CLAUDE.md Updates
+### Multi-Target Sync
 
-Approved learnings are added to:
+Approved learnings are synced to:
 - `~/.claude/CLAUDE.md` (global - applies to all projects)
 - `./CLAUDE.md` (project-specific)
+- `AGENTS.md` (if exists - works with Codex, Cursor, Aider, Jules, Zed, Factory)
+
+Run `/reflect --targets` to see which files will be updated.
 
 ## Uninstall
 
@@ -157,6 +172,24 @@ Before adding a learning, existing CLAUDE.md content is checked. If similar cont
 - Merge with existing entry
 - Replace the old entry
 - Skip the duplicate
+
+### Semantic Deduplication
+
+Over time, CLAUDE.md can accumulate similar entries. Run `/reflect --dedupe` to:
+- Find semantically similar entries (even with different wording)
+- Propose consolidated versions
+- Clean up redundant learnings
+
+Example:
+```
+Before:
+  - Use gpt-5.1 for complex tasks
+  - Prefer gpt-5.1 for reasoning
+  - gpt-5.1 is better for hard problems
+
+After:
+  - Use gpt-5.1 for complex reasoning tasks
+```
 
 ## Tips
 
