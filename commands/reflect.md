@@ -236,7 +236,13 @@ Scan past sessions for corrections missed by hooks. Useful for:
    ls ~/.claude/projects/ | grep -i "$(basename $(pwd))"
    ```
 
-2. Then list ALL session files in that folder:
+2. **Handle underscores vs hyphens:** Directory names may use underscores (`darwin_new`) but encoded paths use hyphens (`darwin-new`). If first grep fails, try replacing underscores:
+   ```bash
+   # If no match, try with hyphens instead of underscores
+   ls ~/.claude/projects/ | grep -i "$(basename $(pwd) | tr '_' '-')"
+   ```
+
+3. Then list ALL session files in that folder:
    ```bash
    ls ~/.claude/projects/[PROJECT_FOLDER]/*.jsonl
    ```
@@ -284,6 +290,12 @@ For each `.jsonl` file in the project folder, extract user messages that match c
 
 When a user stops a tool and provides feedback, this is a strong correction signal. The feedback appears after "user said:" (may be on the next line in the JSON).
 
+**CRITICAL: Tool rejections MUST be shown to user:**
+- Even if you think they're "task-specific", present them
+- The user will decide if they're reusable
+- Count how many you found and report: "Found N tool rejections"
+- Never say "analyzed N rejections, none reusable" without showing them
+
 **0.5c. Apply date filter if `--days N` specified:**
 - Check file modification time
 - Skip files older than N days
@@ -296,6 +308,8 @@ For each extracted correction, evaluate whether it's a REUSABLE learning.
 1. **NEVER filter out `remember:` items** - these are explicit user requests, always present them
 2. **NEVER filter out queue items** - the user explicitly captured these via hooks
 3. **When in doubt, INCLUDE the learning and let user decide** - don't auto-reject borderline cases
+4. **If extraction found matches, SHOW THEM** - never conclude "0 learnings" without presenting raw matches to user
+5. **Tool rejections = ALWAYS SHOW** - even "task-specific" ones might have reusable elements
 
 **REJECT ONLY if clearly:**
 - A question (ends with "?")
@@ -340,6 +354,34 @@ For each ACCEPTED correction, create:
 - Verify queue items from Step 1 are still in working list
 - If queue had N items, working list must have at least N items
 - If working list is empty but queue was NOT empty → BUG, re-add queue items
+
+**MANDATORY PRESENTATION RULE:**
+If your extraction (grep, search, jq) found ANY matches:
+1. You MUST present them to the user - do NOT auto-conclude "0 learnings"
+2. Show at least the top 10-15 raw matches for user review
+3. For each match, propose: keep as learning OR skip
+4. Let the USER decide what's reusable, not the LLM
+
+**Format for presenting raw matches:**
+```
+═══════════════════════════════════════════════════════════
+RAW MATCHES FOUND — [N] items need review
+═══════════════════════════════════════════════════════════
+
+#1 [source: session-scan | tool-rejection]
+   "[raw text from extraction]"
+   → Proposed: [actionable learning] | Scope: [global/project]
+
+#2 ...
+═══════════════════════════════════════════════════════════
+```
+
+Then use AskUserQuestion to let user select which to keep.
+
+**NEVER conclude "0 learnings found" if:**
+- Grep/search returned >0 matches
+- Tool rejections were found but not shown
+- You filtered items without user review
 
 - Continue to Step 3 (Project-Aware Filtering) with COMBINED list (queue + history)
 
