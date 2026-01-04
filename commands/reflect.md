@@ -264,37 +264,25 @@ Session files are JSONL. Use jq to extract user messages, then grep for patterns
 
 Generate appropriate patterns for the detected language and combine with English patterns.
 
-**Default English patterns:**
+**Default English patterns:** `remember:`, `no, use`, `don't use`, `actually`, `stop using`, `never use`, `that's wrong`, `I meant`, `use X not Y`
 
-**IMPORTANT**: Claude Code's bash executor truncates complex commands. Use SIMPLE, single-file commands instead of for loops with complex jq piping.
+**0.5b. Extract corrections from session files:**
 
-```bash
-# For ONE file at a time (replace $FILE with actual path):
-cat $FILE | jq -r '.message.content[]?.text // empty' 2>/dev/null | grep -iE "remember:|no,? use|don't use|actually" | head -10
-```
+For each `.jsonl` file in the project folder, extract user messages that match correction patterns. Use your judgment on the best extraction method - you can use Read, Grep, Bash with jq, or any combination that works.
 
-**Simpler approach - scan files individually:**
-1. List files: `ls ~/.claude/projects/PROJECT_FOLDER/*.jsonl`
-2. For each file, run the simple jq command above
-3. Do NOT use complex for loops - they fail in Claude Code's bash executor
+**What to extract:**
+1. **User messages** with correction patterns (from `type: "user"` entries with `isMeta != true`)
+2. **Tool rejections** - look for `toolUseResult` fields containing "user said:" followed by feedback text
+   - "user said:" followed by empty content means rejection without feedback - skip these
 
-**0.5b-extra. Extract tool rejections (HIGH confidence):**
+**Key file structure:**
+- Session files: `~/.claude/projects/[PROJECT_FOLDER]/*.jsonl`
+- User messages: `{"type": "user", "message": {"content": [{"type": "text", "text": "..."}]}}`
+- Tool rejections: `{"toolUseResult": "The user doesn't want to proceed\nuser said:\n[feedback]"}`
 
-Tool rejections are when user stopped a tool and gave feedback. The feedback appears after "user said:" but may be on the next line.
+**0.5b-extra. Tool rejections are HIGH confidence:**
 
-```bash
-# Extract tool rejection - look for the FULL rejection message
-cat $FILE | jq -r 'select(.toolUseResult) | .toolUseResult' 2>/dev/null | grep -A2 "user said:" | head -20
-```
-
-**Note**: "user said:" followed by empty lines means the user rejected without providing feedback. Only process rejections that have actual text after "user said:".
-
-**Better approach** - extract the full rejection context:
-```bash
-cat $FILE | jq -r 'select(.toolUseResult) | .toolUseResult' 2>/dev/null | grep -B2 -A2 "doesn't want to proceed"
-```
-
-This shows the full context including what action was rejected and why.
+When a user stops a tool and provides feedback, this is a strong correction signal. The feedback appears after "user said:" (may be on the next line in the JSON).
 
 **0.5c. Apply date filter if `--days N` specified:**
 - Check file modification time
@@ -384,29 +372,16 @@ Agent files (`agent-*.jsonl`) are sub-conversations; focus on main session files
 
 **2b. Extract tool rejections (HIGH confidence corrections):**
 
-Tool rejections contain "The user doesn't want to proceed...user said: [correction]". The feedback may appear on a separate line after "user said:".
+Search the current session file for `toolUseResult` fields containing "user said:" followed by feedback. These are high-confidence corrections.
 
-```bash
-# Extract tool rejection - look for the FULL rejection message with context
-cat "$SESSION_FILE" | jq -r 'select(.toolUseResult) | .toolUseResult' 2>/dev/null | grep -A2 "user said:" | head -20
-```
-
-**Note**: "user said:" followed by empty lines means the user rejected without providing feedback - skip these.
-
-**Better approach** - extract the full rejection context:
-```bash
-cat "$SESSION_FILE" | jq -r 'select(.toolUseResult) | .toolUseResult' 2>/dev/null | grep -B2 -A2 "doesn't want to proceed"
-```
-
-This shows the full context including what action was rejected and why.
+- "user said:" followed by empty content = rejection without feedback, skip these
+- Extract the feedback text after "user said:" for processing
 
 **2c. Extract user messages with correction patterns:**
 
-Use the same jq approach from Step 0.5b on the current session file. Remember to use `isMeta != true` to filter out command expansions. Apply dynamic pattern selection if conversation is non-English (see Step 0.5b for language-specific patterns).
-
-```bash
-cat "$SESSION_FILE" | jq -r 'select(.type=="user" and .isMeta != true) | .message.content[]? | select(.type=="text") | .text' 2>/dev/null | grep -iE "(no,? use|don't use|actually|remember:|instead|please enable|should be|i prefer|always use|works better)" | head -20
-```
+Search the current session file for user messages matching correction patterns. Use the same patterns from Step 0.5b. Remember:
+- Filter out `isMeta: true` entries (command expansions like /reflect itself)
+- Apply language-specific patterns if conversation is non-English
 
 **2d. Also reflect on conversation context:**
 - Were there any corrections or patterns not explicitly queued?
