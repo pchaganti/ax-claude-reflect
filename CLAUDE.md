@@ -148,6 +148,27 @@ Analyzes session history to discover repeating patterns that could become skills
 - Misunderstanding patterns (corrections that could become guardrails)
 - Intent similarity (same goal, different wording)
 
+## Skill Improvement Routing
+
+When running `/reflect`, corrections made during skill execution can be routed back to the skill file itself.
+
+**How it works:**
+1. `/reflect` detects when a correction followed a skill invocation (e.g., `/deploy`)
+2. Claude reasons about whether the correction relates to the skill's workflow
+3. User is offered routing options: skill file | CLAUDE.md | both
+4. Skill file is updated in the appropriate section (steps, guardrails, etc.)
+
+**Example:**
+```
+User: /deploy
+Claude: [deploys without running tests]
+User: "no, always run tests before deploying"
+
+→ /reflect detects this relates to /deploy
+→ Offers to add "Run tests before deploying" to commands/deploy.md
+→ Skill file updated with new step in workflow
+```
+
 ## Platform Support
 
 - **macOS**: Fully supported
