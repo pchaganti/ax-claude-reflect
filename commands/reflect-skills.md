@@ -5,12 +5,14 @@ allowed-tools: Read, Write, Bash, Glob, Grep, AskUserQuestion, TodoWrite
 
 ## Arguments
 - `--days N`: Analyze sessions from last N days (default: 14)
-- `--project <path>`: Only analyze sessions from a specific project
+- `--project <path>`: Analyze sessions from a specific project (default: current project)
+- `--all-projects`: Analyze ALL projects (slower, use when looking for cross-project patterns)
 - `--dry-run`: Show analysis without generating skill files
 
 ## Context
 - Current project: !`pwd`
 - Session files location: `~/.claude/projects/`
+- Skills location: `.claude/commands/` (per-project) or `~/.claude/commands/` (global)
 
 ## Your Task
 
@@ -38,7 +40,8 @@ These are the **same pattern** despite different wording.
 
 ### Step 1: Initialize Task Tracking
 
-Use TodoWrite to track progress:
+**REQUIRED:** Use TodoWrite immediately to show progress. Update after each step.
+
 ```json
 {
   "todos": [
@@ -46,8 +49,10 @@ Use TodoWrite to track progress:
     {"content": "Gather session data", "status": "pending", "activeForm": "Reading session files"},
     {"content": "Analyze for patterns", "status": "pending", "activeForm": "Analyzing sessions for patterns"},
     {"content": "Propose skill candidates", "status": "pending", "activeForm": "Proposing skill candidates"},
+    {"content": "Assign skills to projects", "status": "pending", "activeForm": "Assigning skills to projects"},
     {"content": "Get user approval", "status": "pending", "activeForm": "Getting user approval"},
-    {"content": "Generate skill files", "status": "pending", "activeForm": "Generating skill files"}
+    {"content": "Generate skill files", "status": "pending", "activeForm": "Generating skill files"},
+    {"content": "Validate skills", "status": "pending", "activeForm": "Validating generated skills"}
   ]
 }
 ```
@@ -56,25 +61,49 @@ Use TodoWrite to track progress:
 
 Check for:
 - `--days N` → Limit to last N days of sessions (default: 14)
-- `--project <path>` → Filter to specific project
+- `--project <path>` → Specific project path
+- `--all-projects` → Scan all projects (otherwise default to current project)
 - `--dry-run` → Analysis only, no file generation
+
+**Default behavior:** Only scan current project unless `--all-projects` is specified.
 
 ### Step 3: Gather Session Data
 
-Find and read recent session files:
+**Default behavior:** Only scan current project's sessions unless `--all-projects` specified.
 
 ```bash
-# List session directories
+# Get current project's session directory
+PROJECT_PATH=$(pwd)
+PROJECT_DIR=$(echo "$PROJECT_PATH" | sed 's|/|-|g' | sed 's|^-||')
+SESSION_PATH="$HOME/.claude/projects/-${PROJECT_DIR}/"
+
+# Verify session directory exists
+ls -la "$SESSION_PATH" 2>/dev/null | head -5
+```
+
+If `--all-projects` is specified:
+```bash
+# Find all project session directories
 ls -la ~/.claude/projects/ 2>/dev/null | head -20
 ```
 
-For each relevant project, find session files:
+Find session files:
 ```bash
-# Example: Find recent sessions (adjust date filter based on --days)
-find ~/.claude/projects/ -name "*.jsonl" -mtime -14 -type f 2>/dev/null | head -20
+# Find recent sessions (adjust date filter based on --days)
+find "$SESSION_PATH" -name "*.jsonl" -mtime -14 -type f 2>/dev/null
 ```
 
-Extract user messages from each session file using the existing extraction logic.
+**Extract user messages using the existing script:**
+
+```bash
+# Use the plugin's extraction script - DO NOT reinvent with bash/jq
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/extract_session_learnings.py" "$SESSION_FILE"
+```
+
+The extraction script handles:
+- String and list content formats
+- isMeta filtering (excludes command expansions)
+- Skip patterns (XML, JSON, tool results)
 
 **What to extract:**
 - User prompts (natural language requests)
@@ -102,15 +131,16 @@ Read the extracted session data and think:
    - "This should be a guardrail in the skill"
    - "Next time, the skill should do [Z] by default"
 
-**Output your analysis as structured findings:**
+**Output your analysis GROUPED BY PROJECT:**
 
 ```
-PATTERN 1: [Name]
+═══ PROJECT: edu-website ═══
+
+PATTERN 1: Campaign Analytics
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Evidence:
-- Session [date]: "user prompt..."
-- Session [date]: "similar prompt..."
-- Session [date]: "another variant..."
+Evidence (all from edu-website):
+- Session [date]: "review analytics for..."
+- Session [date]: "check campaign performance..."
 
 Intent: [What the user is trying to accomplish]
 
@@ -121,9 +151,17 @@ Typical Steps:
 
 Corrections Applied: [Any guardrails learned from corrections]
 
-Suggested Skill Name: /[skill-name]
-Confidence: [High/Medium/Low]
+Suggested Skill Name: /campaign-analytics
+Confidence: High
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+═══ PROJECT: bayram-os ═══
+
+PATTERN 2: Daily Review
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Evidence (all from bayram-os):
+- Session [date]: "review my productivity..."
+...
 ```
 
 ### Step 5: Propose Skill Candidates
@@ -137,11 +175,11 @@ SKILL CANDIDATES DISCOVERED
 
 Found [N] potential skills from analyzing [M] sessions:
 
-1. /[skill-name] (Confidence: High)
+1. /[skill-name] (Confidence: High) — from [project-name]
    → [One-line description]
    Evidence: [N] similar requests found
 
-2. /[skill-name] (Confidence: Medium)
+2. /[skill-name] (Confidence: Medium) — from [project-name]
    → [One-line description]
    Evidence: [N] similar requests found
 
@@ -153,9 +191,39 @@ Use AskUserQuestion to get feedback:
 - Any patterns to skip?
 - Any name changes?
 
+### Step 5b: Assign Skills to Projects
+
+For each approved skill, determine the correct project location.
+
+**Project Detection Logic:**
+- If ALL evidence comes from one project → suggest that project
+- If evidence spans multiple projects → ask user
+- If pattern is general-purpose → suggest global (`~/.claude/commands/`)
+
+Present assignment table:
+```
+┌──────────────────────┬─────────────────────┬──────────────────────────────┐
+│        Skill         │  Suggested Project  │            Reason            │
+├──────────────────────┼─────────────────────┼──────────────────────────────┤
+│ /daily-review        │ bayram-os           │ All evidence from bayram-os  │
+│ /campaign-analytics  │ edu-website         │ All evidence from edu-website│
+│ /draft-outreach      │ Global              │ Used across multiple projects│
+└──────────────────────┴─────────────────────┴──────────────────────────────┘
+```
+
+Use AskUserQuestion to confirm or adjust assignments.
+
 ### Step 6: Generate Skill Files
 
-For each approved skill candidate, generate a skill file in `./commands/`:
+**Pre-flight checks:**
+```bash
+# Ensure .claude/commands exists for each target project
+for project in [list of target projects]; do
+  mkdir -p "$project/.claude/commands"
+done
+```
+
+For each approved skill candidate, generate a skill file in `.claude/commands/`:
 
 **Skill File Template:**
 ```markdown
@@ -184,7 +252,26 @@ allowed-tools: [Relevant tools based on workflow]
 *Generated by /reflect-skills from [N] session patterns*
 ```
 
-Write to: `./commands/[skill-name].md`
+Write to: `[project-path]/.claude/commands/[skill-name].md`
+
+For global skills: `~/.claude/commands/[skill-name].md`
+
+### Step 6b: Validate Skills
+
+After generating each skill file, verify it works:
+
+1. **File exists:**
+   ```bash
+   ls -la [project-path]/.claude/commands/[skill-name].md
+   ```
+
+2. **Has valid frontmatter:**
+   ```bash
+   head -5 [project-path]/.claude/commands/[skill-name].md
+   ```
+
+3. **Inform user:**
+   > "Skill file created. Restart Claude Code session or start new conversation to see /[skill-name] in autocomplete."
 
 ### Step 7: Summary
 
@@ -194,13 +281,20 @@ SKILL GENERATION COMPLETE
 ════════════════════════════════════════════════════════════
 
 Created [N] new skill(s):
-- /[skill-1]: [path]
-- /[skill-2]: [path]
+
+Project: bayram-os
+  - /daily-review: .claude/commands/daily-review.md
+
+Project: edu-website
+  - /campaign-analytics: .claude/commands/campaign-analytics.md
+
+Global:
+  - /draft-outreach: ~/.claude/commands/draft-outreach.md
 
 Next steps:
-- Review generated skills in ./commands/
-- Test with: /[skill-name]
-- Iterate on skill content as needed
+1. Restart Claude Code or start new conversation
+2. Test with: /[skill-name]
+3. Iterate on skill content as needed
 
 ════════════════════════════════════════════════════════════
 ```
@@ -214,6 +308,7 @@ Next steps:
 3. **Human-in-the-Loop** - User approves before generation
 4. **Minimal but Useful** - Only propose skills that would genuinely save time
 5. **Learn from Corrections** - Build guardrails from past mistakes
+6. **Right Location** - Skills go to `.claude/commands/` in the correct project
 
 ---
 

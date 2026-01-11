@@ -1,7 +1,7 @@
 # claude-reflect
 
 [![GitHub stars](https://img.shields.io/github/stars/BayramAnnakov/claude-reflect?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/stargazers)
-[![Version](https://img.shields.io/badge/version-2.2.1-blue?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/releases)
+[![Version](https://img.shields.io/badge/version-2.3.0-blue?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-126%20passing-brightgreen?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/actions)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect#platform-support)
@@ -57,7 +57,9 @@ After installation, **restart Claude Code** (exit and reopen). Then hooks auto-c
 | `/reflect --targets` | Show detected config files (CLAUDE.md, AGENTS.md) |
 | `/reflect --review` | Show queue with confidence scores and decay status |
 | `/reflect --dedupe` | Find and consolidate similar entries in CLAUDE.md |
-| `/reflect-skills` | **NEW** Discover skill candidates from repeating patterns |
+| `/reflect-skills` | Discover skill candidates from repeating patterns |
+| `/reflect-skills --all-projects` | Scan all projects for cross-project patterns |
+| `/reflect-skills --dry-run` | Preview patterns without generating skill files |
 | `/skip-reflect` | Discard all queued learnings |
 | `/view-queue` | View pending learnings without processing |
 
@@ -117,26 +119,49 @@ Approved learnings are synced to:
 - `~/.claude/CLAUDE.md` (global - applies to all projects)
 - `./CLAUDE.md` (project-specific)
 - `./**/CLAUDE.md` (subdirectories - auto-discovered)
-- `./commands/*.md` (skill files - when correction relates to a skill)
+- `./.claude/commands/*.md` (skill files - when correction relates to a skill)
 - `AGENTS.md` (if exists - works with Codex, Cursor, Aider, Jules, Zed, Factory)
 
 Run `/reflect --targets` to see which files will be updated.
 
-### Skill Discovery (NEW in v2.2.0)
+### Skill Discovery
 
 Run `/reflect-skills` to discover repeating patterns in your sessions that could become reusable skills:
 
 ```
-/reflect-skills              # Analyze last 14 days
-/reflect-skills --days 30    # Analyze last 30 days
+/reflect-skills                 # Analyze current project (last 14 days)
+/reflect-skills --days 30       # Analyze last 30 days
+/reflect-skills --all-projects  # Analyze all projects (slower)
+/reflect-skills --dry-run       # Preview patterns without generating files
 ```
 
-Features:
+**Features:**
 - **AI-powered detection** — uses reasoning, not regex, to find patterns
 - **Semantic similarity** — detects same intent across different phrasings
-- **Generates skill files** — creates draft skills in `./commands/`
+- **Project-aware** — groups patterns by project, suggests correct location
+- **Smart assignment** — asks where each skill should go (project vs global)
+- **Generates skill files** — creates draft skills in `.claude/commands/`
 
-### Skill Improvement Routing (NEW in v2.2.0)
+**Example workflow:**
+```
+/reflect-skills
+
+Found 3 potential skills from analyzing 68 sessions:
+
+1. /daily-review (High) — from bayram-os
+   → Review productivity using ActivityWatch
+   Evidence: 15 similar requests
+
+2. /campaign-analytics (High) — from edu-website
+   → Analyze marketing campaigns via PostHog
+   Evidence: 10 similar requests
+
+Skills will be created in:
+  bayram-os/.claude/commands/daily-review.md
+  edu-website/.claude/commands/campaign-analytics.md
+```
+
+### Skill Improvement Routing
 
 When you correct Claude while using a skill (e.g., `/deploy`), the correction can be routed back to the skill file itself:
 
@@ -146,7 +171,7 @@ Claude: [deploys without running tests]
 User: "no, always run tests before deploying"
 
 → /reflect detects this relates to /deploy
-→ Offers to add learning to commands/deploy.md
+→ Offers to add learning to .claude/commands/deploy.md
 → Skill file updated with new step
 ```
 
