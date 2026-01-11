@@ -24,6 +24,9 @@ from lib.reflect_utils import (
     create_queue_item,
     extract_user_messages,
     extract_tool_rejections,
+    find_claude_files,
+    suggest_claude_file,
+    EXCLUDED_DIRS,
 )
 
 
@@ -431,6 +434,138 @@ class TestToolRejectionExtraction(unittest.TestCase):
 
         rejections = extract_tool_rejections(self.session_file)
         self.assertEqual(len(rejections), 0)
+
+
+class TestClaudeFileDiscovery(unittest.TestCase):
+    """Tests for CLAUDE.md file discovery."""
+
+    def setUp(self):
+        """Create temporary directory structure."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+
+    def tearDown(self):
+        """Clean up temporary files and restore cwd."""
+        os.chdir(self.original_cwd)
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_find_claude_files_root_only(self):
+        """Test finding CLAUDE.md in root directory only."""
+        # Create root CLAUDE.md
+        root_claude = Path(self.temp_dir) / "CLAUDE.md"
+        root_claude.write_text("# Test CLAUDE.md")
+
+        files = find_claude_files(self.temp_dir)
+
+        # Should find global and root (if global exists)
+        root_files = [f for f in files if f["type"] == "root"]
+        self.assertEqual(len(root_files), 1)
+        self.assertEqual(root_files[0]["relative_path"], "./CLAUDE.md")
+
+    def test_find_claude_files_subdirectory(self):
+        """Test finding CLAUDE.md in subdirectories."""
+        # Create root CLAUDE.md
+        root_claude = Path(self.temp_dir) / "CLAUDE.md"
+        root_claude.write_text("# Root")
+
+        # Create subdirectory CLAUDE.md
+        subdir = Path(self.temp_dir) / "src"
+        subdir.mkdir()
+        sub_claude = subdir / "CLAUDE.md"
+        sub_claude.write_text("# Src")
+
+        files = find_claude_files(self.temp_dir)
+
+        subdir_files = [f for f in files if f["type"] == "subdirectory"]
+        self.assertEqual(len(subdir_files), 1)
+        self.assertIn("src/CLAUDE.md", subdir_files[0]["relative_path"])
+
+    def test_find_claude_files_excludes_node_modules(self):
+        """Test that node_modules is excluded from search."""
+        # Create CLAUDE.md in node_modules (should be excluded)
+        node_modules = Path(self.temp_dir) / "node_modules"
+        node_modules.mkdir()
+        excluded_claude = node_modules / "CLAUDE.md"
+        excluded_claude.write_text("# Should be excluded")
+
+        files = find_claude_files(self.temp_dir)
+
+        # Should not find the node_modules CLAUDE.md
+        all_paths = [f["path"] for f in files]
+        self.assertFalse(any("node_modules" in p for p in all_paths))
+
+    def test_find_claude_files_excludes_git(self):
+        """Test that .git is excluded from search."""
+        # Create CLAUDE.md in .git (should be excluded)
+        git_dir = Path(self.temp_dir) / ".git"
+        git_dir.mkdir()
+        excluded_claude = git_dir / "CLAUDE.md"
+        excluded_claude.write_text("# Should be excluded")
+
+        files = find_claude_files(self.temp_dir)
+
+        # Should not find the .git CLAUDE.md
+        all_paths = [f["path"] for f in files]
+        self.assertFalse(any(".git" in p for p in all_paths))
+
+    def test_excluded_dirs_constant(self):
+        """Test that EXCLUDED_DIRS contains expected directories."""
+        self.assertIn("node_modules", EXCLUDED_DIRS)
+        self.assertIn(".git", EXCLUDED_DIRS)
+        self.assertIn("venv", EXCLUDED_DIRS)
+        self.assertIn("__pycache__", EXCLUDED_DIRS)
+
+
+class TestSuggestClaudeFile(unittest.TestCase):
+    """Tests for suggest_claude_file function."""
+
+    def test_suggest_global_for_model_names(self):
+        """Test that model names suggest global CLAUDE.md."""
+        files = [
+            {"path": "/home/.claude/CLAUDE.md", "relative_path": "~/.claude/CLAUDE.md", "type": "global"},
+            {"path": "/project/CLAUDE.md", "relative_path": "./CLAUDE.md", "type": "root"},
+        ]
+
+        result = suggest_claude_file("Use gpt-5.1 for reasoning tasks", files)
+        self.assertEqual(result, "~/.claude/CLAUDE.md")
+
+        result = suggest_claude_file("claude-opus is better for coding", files)
+        self.assertEqual(result, "~/.claude/CLAUDE.md")
+
+    def test_suggest_global_for_always_never(self):
+        """Test that 'always/never' patterns suggest global."""
+        files = [
+            {"path": "/home/.claude/CLAUDE.md", "relative_path": "~/.claude/CLAUDE.md", "type": "global"},
+            {"path": "/project/CLAUDE.md", "relative_path": "./CLAUDE.md", "type": "root"},
+        ]
+
+        result = suggest_claude_file("always run tests before committing", files)
+        self.assertEqual(result, "~/.claude/CLAUDE.md")
+
+        result = suggest_claude_file("never use force push on main", files)
+        self.assertEqual(result, "~/.claude/CLAUDE.md")
+
+    def test_suggest_subdirectory_when_mentioned(self):
+        """Test suggestion based on directory name in learning."""
+        files = [
+            {"path": "/home/.claude/CLAUDE.md", "relative_path": "~/.claude/CLAUDE.md", "type": "global"},
+            {"path": "/project/CLAUDE.md", "relative_path": "./CLAUDE.md", "type": "root"},
+            {"path": "/project/api/CLAUDE.md", "relative_path": "./api/CLAUDE.md", "type": "subdirectory"},
+        ]
+
+        result = suggest_claude_file("The api module uses REST conventions", files)
+        self.assertEqual(result, "./api/CLAUDE.md")
+
+    def test_suggest_none_for_ambiguous(self):
+        """Test that ambiguous learnings return None (let Claude decide)."""
+        files = [
+            {"path": "/home/.claude/CLAUDE.md", "relative_path": "~/.claude/CLAUDE.md", "type": "global"},
+            {"path": "/project/CLAUDE.md", "relative_path": "./CLAUDE.md", "type": "root"},
+        ]
+
+        result = suggest_claude_file("Use database connection pooling", files)
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":
