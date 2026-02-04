@@ -5,6 +5,19 @@ All notable changes to claude-reflect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-02-04
+
+### Fixed
+- **False positive filtering** - System content (`<task-notification>`, `<system-reminder>`, session continuations) no longer triggers false pattern matches (#15)
+  - Added `should_include_message()` filter before pattern detection
+  - Added `MAX_CAPTURE_PROMPT_LENGTH` (500 chars) guard — real corrections are short, system content is long
+  - Explicit `remember:` markers bypass length filter
+  - Thanks to @DmitryBMsk for the contribution!
+
+### Changed
+- Made `_should_include_message` public as `should_include_message()` (backward-compatible alias preserved)
+- Test count increased from 141 to 160
+
 ## [2.5.0] - 2026-01-25
 
 ### Added
