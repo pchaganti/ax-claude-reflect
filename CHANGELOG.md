@@ -5,6 +5,17 @@ All notable changes to claude-reflect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-02-12
+
+### Added
+- **`--model` flag** — Control which model is used for semantic analysis during `/reflect` (#16)
+  - Default: `sonnet` (cost-effective for classification tasks)
+  - Usage: `/reflect --model haiku` for faster/cheaper, `/reflect --model opus` for maximum accuracy
+  - Previously defaulted to user's CLI model (often Opus), burning expensive tokens on simple classification
+
+### Changed
+- `DEFAULT_MODEL = "sonnet"` in `semantic_detector.py` — all semantic analysis functions (`semantic_analyze`, `validate_tool_error`, `detect_contradictions`) now default to sonnet instead of inheriting the user's CLI model
+
 ## [3.0.0] - 2026-02-12
 
 ### Added

@@ -12,6 +12,7 @@ allowed-tools: Read, Edit, Write, Glob, Bash, Grep, AskUserQuestion, TodoWrite
 - `--dedupe`: Scan CLAUDE.md for similar entries and propose consolidations.
 - `--organize`: Analyze memory hierarchy and suggest reorganization across tiers.
 - `--include-tool-errors`: Include project-specific tool execution errors in scan (auto-enabled with `--scan-history`).
+- `--model MODEL`: Model for semantic analysis (default: `sonnet`). Use `haiku` for faster/cheaper runs or `opus` for maximum accuracy.
 
 ## Context
 - Project CLAUDE.md: @CLAUDE.md

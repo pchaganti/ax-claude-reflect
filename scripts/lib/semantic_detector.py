@@ -12,6 +12,11 @@ from typing import Optional, Dict, Any
 # Default timeout for Claude CLI calls (seconds)
 DEFAULT_TIMEOUT = 30
 
+# Default model for semantic analysis — uses a cost-effective model
+# to avoid burning expensive Opus tokens on classification tasks.
+# Override via --model flag in /reflect or model parameter in API calls.
+DEFAULT_MODEL = "sonnet"
+
 # Semantic analysis prompt template
 ANALYSIS_PROMPT = """Analyze this user message from a coding session. Determine if it contains
 a reusable learning, correction, or preference that should be remembered for future sessions.
@@ -67,10 +72,11 @@ def semantic_analyze(
     # Build the prompt
     prompt = ANALYSIS_PROMPT.format(text=text.replace('"', '\\"'))
 
-    # Build command
+    # Build command — use DEFAULT_MODEL if no explicit model specified
+    effective_model = model or DEFAULT_MODEL
     cmd = ["claude", "-p", "--output-format", "json"]
-    if model:
-        cmd.extend(["--model", model])
+    if effective_model:
+        cmd.extend(["--model", effective_model])
 
     try:
         result = subprocess.run(
@@ -299,10 +305,11 @@ def validate_tool_error(
         suggested_guideline=suggested_guideline or "No suggestion"
     )
 
-    # Build command
+    # Build command — use DEFAULT_MODEL if no explicit model specified
+    effective_model = model or DEFAULT_MODEL
     cmd = ["claude", "-p", "--output-format", "json"]
-    if model:
-        cmd.extend(["--model", model])
+    if effective_model:
+        cmd.extend(["--model", effective_model])
 
     try:
         result = subprocess.run(
@@ -476,10 +483,11 @@ def detect_contradictions(
     entries_text = "\n".join(f"- {e}" for e in entries)
     prompt = CONTRADICTION_PROMPT.format(entries=entries_text)
 
-    # Build command
+    # Build command — use DEFAULT_MODEL if no explicit model specified
+    effective_model = model or DEFAULT_MODEL
     cmd = ["claude", "-p", "--output-format", "json"]
-    if model:
-        cmd.extend(["--model", model])
+    if effective_model:
+        cmd.extend(["--model", effective_model])
 
     try:
         result = subprocess.run(
