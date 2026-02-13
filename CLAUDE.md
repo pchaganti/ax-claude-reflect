@@ -24,19 +24,33 @@ tests/                      → Test suite (pytest)
 ### Data Flow
 
 1. User prompt → `capture_learning.py` (UserPromptSubmit hook) → `~/.claude/learnings-queue.json`
-2. `/reflect` command → reads queue + scans sessions → filters/dedupes → writes to CLAUDE.md/AGENTS.md
+2. `/reflect` command → reads queue + scans sessions → filters/dedupes → routes to memory targets
 3. Session files live at `~/.claude/projects/[PROJECT_FOLDER]/*.jsonl`
+
+### Memory Targets (Full Hierarchy)
+
+| Target | Path | Type | Description |
+|--------|------|------|-------------|
+| Global CLAUDE.md | `~/.claude/CLAUDE.md` | `global` | Always enabled |
+| Project CLAUDE.md | `./CLAUDE.md` | `root` | Project-specific |
+| CLAUDE.local.md | `./CLAUDE.local.md` | `local` | Personal, gitignored |
+| Subdirectory | `./**/CLAUDE.md` | `subdirectory` | Auto-discovered |
+| Project Rules | `./.claude/rules/*.md` | `rule` | Modular, path-scoped |
+| User Rules | `~/.claude/rules/*.md` | `user-rule` | Global modular rules |
+| Auto Memory | `~/.claude/projects/<project>/memory/*.md` | `auto-memory` | Low-confidence staging |
+| Skill Files | `./commands/*.md` | skill | Correction during skill use |
+| AGENTS.md | `./AGENTS.md` | agents | Cross-tool standard |
 
 ### Key Files
 
-- `scripts/lib/reflect_utils.py`: Shared utilities (paths, queue ops, regex pattern detection)
+- `scripts/lib/reflect_utils.py`: Shared utilities (paths, queue ops, regex detection, memory hierarchy discovery, auto memory, rule frontmatter parsing)
 - `scripts/lib/semantic_detector.py`: AI-powered semantic analysis via `claude -p`
 - `scripts/capture_learning.py`: Pattern detection (correction, positive, explicit markers) with confidence scoring
 - `scripts/check_learnings.py`: PreCompact hook that backs up queue before context compaction
 - `scripts/extract_session_learnings.py`: Extracts user messages from session JSONL files
 - `scripts/extract_tool_rejections.py`: Extracts user corrections from tool rejections
 - `scripts/compare_detection.py`: Compare regex vs semantic detection on session data
-- `commands/reflect.md`: Main skill - 850+ line document defining the /reflect workflow
+- `commands/reflect.md`: Main skill defining the /reflect workflow (memory hierarchy aware)
 - `commands/reflect-skills.md`: Skill discovery - AI-powered pattern detection from sessions
 
 ## Development Commands

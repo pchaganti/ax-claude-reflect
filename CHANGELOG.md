@@ -5,6 +5,41 @@ All notable changes to claude-reflect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-02-12
+
+### Added
+- **Full Memory Hierarchy Integration** — `/reflect` now supports all 6 Claude Code memory tiers:
+  - `.claude/rules/*.md` — Modular rule files with optional YAML `paths:` frontmatter for path-scoping
+  - `~/.claude/rules/*.md` — User-level global rule files
+  - `CLAUDE.local.md` — Personal, gitignored learnings
+  - Auto memory (`~/.claude/projects/<project>/memory/*.md`) — Low-confidence staging area
+- **Hierarchy-Aware Routing** — `suggest_claude_file()` now routes by learning type:
+  - Guardrails → `.claude/rules/guardrails.md`
+  - Model preferences → model-preferences rule file or global CLAUDE.md
+  - Low-confidence (0.60-0.74) → auto memory for later promotion
+  - Path-scoped rules → matching rule file by `paths:` frontmatter
+- **`--organize` command** — Analyze memory hierarchy and suggest reorganization:
+  - Detects overgrown files, wrong-tier entries, scattered topics, promotion candidates
+  - Presents issues with suggested fixes, applies with user approval
+- **Auto Memory Enrichment (Step 1.6)** — During `/reflect`, scans auto memory for promotion candidates and routes low-confidence items to auto memory
+- **Cross-Tier Duplicate Detection** — Step 4 now searches all memory tiers (CLAUDE.md, rules, local, auto memory)
+- **Rule File Mapping** — Learning type → suggested rule file mapping table in reflect.md
+- **New utilities in `reflect_utils.py`**:
+  - `_parse_rule_frontmatter()` — Line-based YAML parser for rule frontmatter (no PyYAML dependency)
+  - `get_project_folder_name()` — Claude Code folder name encoding
+  - `get_auto_memory_path()` — Auto memory directory resolution
+  - `read_auto_memory()` — Read all auto memory topic files
+  - `suggest_auto_memory_topic()` — Keyword-based topic filename suggestion
+  - `read_all_memory_entries()` — Cross-tier entry reader for deduplication
+- **New test file** `tests/test_memory_hierarchy.py` with 28 tests covering all new functionality
+- Backward-compat tests added to `tests/test_reflect_utils.py`
+
+### Changed
+- `find_claude_files()` now discovers `CLAUDE.local.md`, `.claude/rules/*.md`, and `~/.claude/rules/*.md`
+- `suggest_claude_file()` accepts optional `learning_type` parameter for smarter routing
+- `--targets` display updated with full hierarchy view (rules, local, auto memory)
+- Step 7 (Apply Changes) now handles rule files and auto memory destinations
+
 ## [2.6.0] - 2026-02-12
 
 ### Added

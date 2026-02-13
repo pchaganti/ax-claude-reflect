@@ -10,6 +10,7 @@ allowed-tools: Read, Edit, Write, Glob, Bash, Grep, AskUserQuestion, TodoWrite
 - `--targets`: Show detected AI assistant config files and exit.
 - `--review`: Show learnings with stale/decayed entries for review.
 - `--dedupe`: Scan CLAUDE.md for similar entries and propose consolidations.
+- `--organize`: Analyze memory hierarchy and suggest reorganization across tiers.
 - `--include-tool-errors`: Include project-specific tool execution errors in scan (auto-enabled with `--scan-history`).
 
 ## Context
@@ -28,16 +29,22 @@ Claude-reflect syncs learnings to CLAUDE.md files (including subdirectories), sk
 |--------|-----------|--------|-------|
 | **Global CLAUDE.md** | `~/.claude/CLAUDE.md` | Markdown | Always enabled |
 | **Project CLAUDE.md** | `./CLAUDE.md` | Markdown | If exists |
+| **CLAUDE.local.md** | `./CLAUDE.local.md` | Markdown | Personal, gitignored |
 | **Subdirectory CLAUDE.md** | `./**/CLAUDE.md` | Markdown | Auto-discovered |
+| **Project Rules** | `./.claude/rules/*.md` | Markdown | Modular rules, optional path-scoping |
+| **User Rules** | `~/.claude/rules/*.md` | Markdown | Global modular rules |
 | **Skill Files** | `./commands/*.md` | Markdown | When correction relates to skill |
+| **Auto Memory** | `~/.claude/projects/<project>/memory/*.md` | Markdown | Low-confidence, exploratory learnings |
 | **AGENTS.md** | `./AGENTS.md` | Markdown | Industry standard (Codex, Cursor, Aider, Jules, Zed, Factory) |
 
 **Target Discovery:**
 
-Use the Python utility to find all CLAUDE.md files:
+Use the Python utility to find all memory tier files:
 ```python
 from scripts.lib.reflect_utils import find_claude_files
-files = find_claude_files()  # Returns list of {path, relative_path, type}
+files = find_claude_files()
+# Returns list of {path, relative_path, type, frontmatter}
+# Types: 'global', 'root', 'local', 'subdirectory', 'rule', 'user-rule'
 ```
 
 Or discover manually:
@@ -48,13 +55,21 @@ find . -name "CLAUDE.md" -type f \
   -not -path "*/.git/*" \
   -not -path "*/venv/*" \
   -not -path "*/.venv/*"
+# Also check rule files and local
+ls .claude/rules/*.md 2>/dev/null
+ls CLAUDE.local.md 2>/dev/null
+ls ~/.claude/rules/*.md 2>/dev/null
 ```
 
-**Target Selection:**
-- Let users choose which CLAUDE.md file(s) to write to
-- Use AI reasoning to suggest appropriate file based on learning content
-- Global learnings (model names, general patterns) → `~/.claude/CLAUDE.md`
-- Project-specific learnings → `./CLAUDE.md` or subdirectory file
+**Target Selection (Hierarchy-Aware Routing):**
+- **Guardrail corrections** ("don't do X") → `.claude/rules/guardrails.md`
+- **Model preferences** → existing model-preferences rule file or `~/.claude/CLAUDE.md`
+- **Global behavioral** (always/never/prefer) → `~/.claude/CLAUDE.md`
+- **Path-scoped** (learning mentions directory covered by rule's `paths:`) → that rule file
+- **Personal/local** (machine-specific, not for team) → `./CLAUDE.local.md`
+- **Low-confidence** (0.60-0.74) → auto memory for later promotion
+- **Project-specific** → `./CLAUDE.md` or subdirectory file
+- Let users override routing with AI reasoning
 
 **Note on Confidence & Decay:**
 - Confidence scores help prioritize learnings during `/reflect` review
@@ -127,9 +142,10 @@ Detect and display all AI assistant config files with **line counts** and **size
 
 **Detection Steps:**
 
-1. Find all CLAUDE.md files (global, project root, subdirectories)
+1. Find all memory tier files using `find_claude_files()` (discovers CLAUDE.md, CLAUDE.local.md, rule files)
 2. Count lines in each file
-3. Display with status indicator:
+3. Check for auto memory directory
+4. Display with status indicator:
    - `✓` = under 150 lines (healthy)
    - `⚠️` = over 150 lines (consider cleanup)
 
@@ -151,22 +167,36 @@ count_lines("./CLAUDE.md")
 **Display format:**
 ```
 ════════════════════════════════════════════════════════════
-CLAUDE.MD TARGET FILES
+MEMORY HIERARCHY — TARGET FILES
 ════════════════════════════════════════════════════════════
 
+CLAUDE.md Files:
   ~/.claude/CLAUDE.md (global)           42 lines  ✓
   ./CLAUDE.md (project)                 156 lines  ⚠️
+  ./CLAUDE.local.md (personal)           12 lines  ✓
   ./src/CLAUDE.md (subdirectory)         28 lines  ✓
 
+Rule Files:
+  ./.claude/rules/guardrails.md          8 lines  ✓
+  ./.claude/rules/coding-style.md       15 lines  ✓  [paths: src/]
+  ~/.claude/rules/model-preferences.md  10 lines  ✓
+
+Auto Memory:
+  ~/.claude/projects/.../memory/         3 files (general.md, tool-usage.md, workflow.md)
+
+Other:
   AGENTS.md                              ✗ not found
 
 ────────────────────────────────────────────────────────────
 ⚠️  ./CLAUDE.md exceeds 150 lines
     Tip: Run /reflect --dedupe to consolidate similar entries
+    Tip: Run /reflect --organize to redistribute entries across tiers
 ────────────────────────────────────────────────────────────
 
-To enable AGENTS.md (syncs to Codex, Cursor, Aider, Jules, Zed, Factory):
-  touch AGENTS.md
+To create new targets:
+  touch AGENTS.md                    # Enable AGENTS.md sync
+  touch CLAUDE.local.md              # Personal learnings (gitignored)
+  mkdir -p .claude/rules             # Enable modular rule files
 
 ════════════════════════════════════════════════════════════
 ```
@@ -174,7 +204,8 @@ To enable AGENTS.md (syncs to Codex, Cursor, Aider, Jules, Zed, Factory):
 **Logic:**
 - Show warning section only if ANY file exceeds 150 lines
 - List all files over threshold in the warning
-- Always suggest `--dedupe` as the remediation
+- Always suggest `--dedupe` and `--organize` as remediation
+- Show path-scoping info for rule files with `paths:` frontmatter
 
 Exit after showing targets (don't process learnings).
 
@@ -324,6 +355,93 @@ For each contradiction found:
 - Preserve section structure
 
 Exit after deduplication (don't process queue).
+
+### Handle --organize Argument
+
+**If user passed `--organize`:**
+
+Analyze the full memory hierarchy and suggest reorganization to reduce clutter and improve routing.
+
+**1. Inventory all memory locations:**
+
+```python
+from scripts.lib.reflect_utils import find_claude_files, read_auto_memory, read_all_memory_entries
+
+files = find_claude_files()
+auto_memory = read_auto_memory()
+all_entries = read_all_memory_entries()
+```
+
+Count lines, entries, and files for each tier.
+
+**2. Detect issues:**
+
+| Issue | Detection | Fix |
+|-------|-----------|-----|
+| Overgrown file (>150 lines) | Line count check | Split into rule files or subdirectory CLAUDE.md |
+| Wrong-tier entries | Global-looking entries in project file or vice versa | Move to correct tier |
+| Scattered topics | Same topic (e.g., model preferences) across multiple files | Consolidate into rule file |
+| Path-scoping opportunities | Entries mentioning specific directories | Create path-scoped rule files |
+| Auto memory promotion candidates | Confirmed patterns in auto memory | Promote to CLAUDE.md |
+| Cross-tier duplicates | Same entry in multiple tiers | Remove duplicates |
+
+**3. Present findings:**
+
+```
+════════════════════════════════════════════════════════════
+MEMORY HIERARCHY ANALYSIS
+════════════════════════════════════════════════════════════
+
+Current state:
+  ~/.claude/CLAUDE.md          182 lines  ⚠️ (over 150)
+  ./CLAUDE.md                   95 lines  ✓
+  .claude/rules/                 0 files
+  Auto memory                    2 files
+
+Issues found: 4
+────────────────────────────────────────────────────────────
+
+#1 OVERGROWN: ~/.claude/CLAUDE.md (182 lines)
+   → Suggestion: Extract model preferences to ~/.claude/rules/model-preferences.md
+   → Suggestion: Extract guardrails to .claude/rules/guardrails.md
+
+#2 WRONG TIER: 3 global-looking entries in ./CLAUDE.md
+   → "Always use venv" — should be in ~/.claude/CLAUDE.md
+   → "Never use force push" — should be in ~/.claude/CLAUDE.md
+
+#3 PROMOTION: 2 auto memory entries confirmed across sessions
+   → "Use batch mode for API calls" — promote to ./CLAUDE.md
+
+#4 DUPLICATE: 1 entry found in multiple tiers
+   → "Use gpt-5.1 for reasoning" in both ~/.claude/CLAUDE.md and auto memory
+
+════════════════════════════════════════════════════════════
+```
+
+**4. Get user approval per fix:**
+
+Use AskUserQuestion for each proposed reorganization:
+```json
+{
+  "questions": [{
+    "question": "Apply reorganization #1: Extract model preferences to rule file?",
+    "header": "Organize",
+    "multiSelect": false,
+    "options": [
+      {"label": "Yes, extract (Recommended)", "description": "Move 12 model entries to ~/.claude/rules/model-preferences.md"},
+      {"label": "Skip", "description": "Leave entries in current location"}
+    ]
+  }]
+}
+```
+
+**5. Apply reorganization:**
+- Use Edit tool to move content between files
+- Create new rule files as needed
+- Remove duplicates from source files
+- Preserve section structure in all files
+
+**6. Exit after reorganization (don't process queue).**
 
 ### First-Run Detection (Per-Project)
 
@@ -680,6 +798,48 @@ Filtered items (skipped):
 
 **NOTE**: `remember:` items are ALWAYS kept regardless of semantic analysis — explicit user requests are never filtered.
 
+### Step 1.6: Auto Memory Enrichment
+
+Scan auto memory for entries that may deserve "promotion" to CLAUDE.md, and route low-confidence items downward.
+
+**1.6a. Check auto memory for promotion candidates:**
+
+```python
+from scripts.lib.reflect_utils import read_auto_memory
+auto_entries = read_auto_memory()
+# Look for entries that have been validated by repeated use
+```
+
+If auto memory entries exist, scan for patterns that appear in multiple topic files or have been manually confirmed — these are candidates for promotion to CLAUDE.md.
+
+**1.6b. Route low-confidence queue items to auto memory:**
+
+For items with confidence 0.60-0.74 that passed semantic validation:
+- Offer auto memory as a destination instead of CLAUDE.md
+- Auto memory is a "staging area" — items can be promoted later via `/reflect --organize`
+
+```
+Learning: "Try using batch mode for large datasets" (confidence: 0.65)
+→ Suggested destination: Auto Memory (model-preferences.md)
+  Reason: Low confidence — store in auto memory for now, promote later if confirmed
+```
+
+Use AskUserQuestion when routing to auto memory:
+```json
+{
+  "questions": [{
+    "question": "Low-confidence learning — where should it go?",
+    "header": "Route",
+    "multiSelect": false,
+    "options": [
+      {"label": "Auto Memory (Recommended)", "description": "Store in auto memory for later promotion"},
+      {"label": "CLAUDE.md", "description": "Add to CLAUDE.md despite low confidence"},
+      {"label": "Skip", "description": "Don't store this learning"}
+    ]
+  }]
+}
+```
+
 ### Step 2: Session Reflection (Enhanced with History Analysis)
 
 **Note**: This step is for analyzing the CURRENT session only (when NOT using `--scan-history`).
@@ -883,17 +1043,34 @@ Proposed consolidation:
 - If all learnings are semantically distinct, proceed to Step 4
 - Only show consolidation UI when similar entries are detected
 
-### Step 4: Duplicate Detection with Line Numbers
+### Step 4: Duplicate Detection with Line Numbers (All Memory Tiers)
 
-For each learning kept after filtering, search BOTH CLAUDE.md files:
+For each learning kept after filtering, search ALL memory tiers:
 
 ```bash
+# CLAUDE.md files
 grep -n -i "keyword" ~/.claude/CLAUDE.md
 grep -n -i "keyword" CLAUDE.md
+grep -n -i "keyword" CLAUDE.local.md 2>/dev/null
+
+# Rule files
+grep -rn -i "keyword" .claude/rules/ 2>/dev/null
+grep -rn -i "keyword" ~/.claude/rules/ 2>/dev/null
+
+# Auto memory
+grep -rn -i "keyword" ~/.claude/projects/PROJECT_FOLDER/memory/ 2>/dev/null
+```
+
+Or use the cross-tier deduplication utility:
+```python
+from scripts.lib.reflect_utils import read_all_memory_entries
+entries = read_all_memory_entries()
+# Returns [{text, source_file, source_type, line_number}, ...]
+# Search entries for semantic similarity to each learning
 ```
 
 If duplicate found:
-- Show: "⚠️ SIMILAR in [global/project] CLAUDE.md: Line [N]: [content]"
+- Show: "⚠️ SIMILAR in [source_type] [source_file]: Line [N]: [content]"
 - Offer: [m]erge | [r]eplace | [a]dd anyway | [s]kip
 
 ### Step 5: Present Summary and Get User Decision
@@ -1116,6 +1293,42 @@ Only after final confirmation:
 2. Use Edit tool with precise old_string from detected line numbers
 3. For new entries, add after the relevant section header
 
+**7a.1. Apply to Rule Files (if any routed to rules):**
+
+For learnings routed to `.claude/rules/*.md`:
+
+1. Check if the target rule file exists; if not, create it:
+   - Ask user to confirm filename for new rule files
+   - Naming conventions: `guardrails.md`, `model-preferences.md`, `coding-style.md`, `testing.md`, etc.
+2. If the rule is path-specific, add YAML frontmatter:
+   ```markdown
+   ---
+   paths:
+     - "src/"
+     - "lib/"
+   ---
+   ```
+3. Append the learning as a bullet point under an appropriate heading
+4. For `~/.claude/rules/*.md` (user-level rules), use the same approach
+
+**7a.2. Apply to Auto Memory (if low-confidence or exploratory):**
+
+For learnings routed to auto memory (typically confidence 0.60-0.74):
+
+1. Use `suggest_auto_memory_topic()` to determine filename:
+   ```python
+   from scripts.lib.reflect_utils import suggest_auto_memory_topic, get_auto_memory_path
+   topic = suggest_auto_memory_topic(learning_text)  # e.g., "model-preferences"
+   memory_dir = get_auto_memory_path()
+   ```
+2. Create memory directory if missing: `memory_dir.mkdir(parents=True, exist_ok=True)`
+3. Write/append to topic file (`{topic}.md`) in markdown format:
+   ```markdown
+   # Model Preferences
+   - Use gpt-5.1 for reasoning tasks (confidence: 0.65, 2026-02-12)
+   ```
+4. Auto memory entries can later be "promoted" to CLAUDE.md via `/reflect --organize`
+
 **7b. Apply to Skill Files (if any routed to skills):**
 
 For learnings routed to skill files in Step 5a.2:
@@ -1224,6 +1437,35 @@ Use these standard headers:
 - `## Common Errors to Avoid` — gotchas, mistakes
 - `## Environment Setup` — venv, configs, paths
 
+### Rule File Mapping
+
+When routing learnings to `.claude/rules/` files, use this mapping:
+
+| Learning Type | Suggested Rule File | Create If Missing |
+|---------------|--------------------|--------------------|
+| Guardrails / "don't do X" | `guardrails.md` | Yes |
+| Model preferences | `model-preferences.md` | Yes |
+| Coding style / formatting | `coding-style.md` | Yes |
+| Testing conventions | `testing.md` | Yes |
+| Path-specific rules | `{context}.md` with `paths:` frontmatter | Ask user |
+
+**YAML Frontmatter for Path-Scoped Rules:**
+
+When a learning applies only to specific directories, create the rule file with frontmatter:
+```markdown
+---
+paths:
+  - "src/api/"
+  - "src/services/"
+---
+
+# API Conventions
+- Always use async/await for API handlers
+- Return proper HTTP status codes
+```
+
+Rules without `paths:` frontmatter apply globally within the project.
+
 ### Guardrail Routing
 
 Learnings with `type: "guardrail"` are special corrections about unwanted behavior. These should be routed to the `## Guardrails` section in CLAUDE.md.
@@ -1263,5 +1505,7 @@ Proposed entry for ## Guardrails:
 
 If CLAUDE.md exceeds 150 lines, warn:
 ```
-Note: CLAUDE.md is [N] lines. Consider consolidating entries.
+Note: CLAUDE.md is [N] lines. Consider:
+  - /reflect --dedupe to consolidate similar entries
+  - /reflect --organize to redistribute across memory tiers
 ```

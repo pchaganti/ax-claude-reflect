@@ -28,6 +28,8 @@ from lib.reflect_utils import (
     suggest_claude_file,
     should_include_message,
     EXCLUDED_DIRS,
+    _parse_rule_frontmatter,
+    get_project_folder_name,
 )
 
 
@@ -756,6 +758,65 @@ class TestShouldIncludeMessage(unittest.TestCase):
     def test_bold_text_excluded(self):
         """Messages starting with bold markdown should be excluded."""
         self.assertFalse(should_include_message("**Note:** don't use this pattern"))
+
+
+class TestClaudeFileDiscoveryBackwardCompat(unittest.TestCase):
+    """Backward-compatibility tests: new find_claude_files() still returns old types."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_old_types_still_returned(self):
+        """Existing callers expecting 'root', 'subdirectory', 'global' still work."""
+        root_claude = Path(self.temp_dir) / "CLAUDE.md"
+        root_claude.write_text("# Root")
+        sub = Path(self.temp_dir) / "src"
+        sub.mkdir()
+        (sub / "CLAUDE.md").write_text("# Src")
+
+        files = find_claude_files(self.temp_dir)
+        types = [f["type"] for f in files]
+        self.assertIn("root", types)
+        self.assertIn("subdirectory", types)
+
+    def test_no_frontmatter_field_on_old_types(self):
+        """Old types (root, subdirectory, global) don't have frontmatter field."""
+        root_claude = Path(self.temp_dir) / "CLAUDE.md"
+        root_claude.write_text("# Root")
+
+        files = find_claude_files(self.temp_dir)
+        root_files = [f for f in files if f["type"] == "root"]
+        self.assertEqual(len(root_files), 1)
+        self.assertNotIn("frontmatter", root_files[0])
+
+
+class TestSuggestClaudeFileBackwardCompat(unittest.TestCase):
+    """Backward-compatibility: suggest_claude_file() without learning_type."""
+
+    def test_works_without_learning_type(self):
+        """Calling without learning_type still works (default None)."""
+        files = [
+            {"path": "/home/.claude/CLAUDE.md", "relative_path": "~/.claude/CLAUDE.md", "type": "global"},
+            {"path": "/project/CLAUDE.md", "relative_path": "./CLAUDE.md", "type": "root"},
+        ]
+        # Should work exactly as before
+        result = suggest_claude_file("use gpt-5.1 for reasoning", files)
+        self.assertEqual(result, "~/.claude/CLAUDE.md")
+
+        result = suggest_claude_file("something ambiguous", files)
+        self.assertIsNone(result)
+
+    def test_two_arg_call_still_works(self):
+        """Positional two-arg call (old API) still works."""
+        files = [
+            {"path": "/home/.claude/CLAUDE.md", "relative_path": "~/.claude/CLAUDE.md", "type": "global"},
+        ]
+        result = suggest_claude_file("always use venv", files)
+        self.assertEqual(result, "~/.claude/CLAUDE.md")
 
 
 class TestCaptureLearningFiltering(unittest.TestCase):
