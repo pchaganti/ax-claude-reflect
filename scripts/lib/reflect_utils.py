@@ -29,6 +29,18 @@ def get_claude_dir() -> Path:
     return Path.home() / ".claude"
 
 
+def get_cleanup_period_days() -> Optional[int]:
+    """Get cleanupPeriodDays from ~/.claude/settings.json. Returns None if not set."""
+    settings_path = get_claude_dir() / "settings.json"
+    if not settings_path.exists():
+        return None
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        return settings.get("cleanupPeriodDays")
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
 # Directories to exclude when searching for CLAUDE.md files
 EXCLUDED_DIRS = {
     'node_modules', '.git', '.svn', '.hg', 'venv', '.venv', 'env', '.env',

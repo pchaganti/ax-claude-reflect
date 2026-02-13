@@ -5,6 +5,15 @@ All notable changes to claude-reflect will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-02-12
+
+### Added
+- **Session retention warning** - SessionStart hook warns when `cleanupPeriodDays` is not configured
+  - Claude Code deletes sessions after 30 days by default, which affects `/reflect --scan-history` and `/reflect-skills`
+  - Self-resolving: warning disappears once user adds `{"cleanupPeriodDays": 99999}` to `~/.claude/settings.json`
+  - New `get_cleanup_period_days()` utility in reflect_utils.py
+- **README tip #7** - Documents the recommended `cleanupPeriodDays` setting
+
 ## [2.5.1] - 2026-02-04
 
 ### Fixed

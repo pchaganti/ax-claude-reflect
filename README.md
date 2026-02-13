@@ -1,7 +1,7 @@
 # claude-reflect
 
 [![GitHub stars](https://img.shields.io/github/stars/BayramAnnakov/claude-reflect?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/stargazers)
-[![Version](https://img.shields.io/badge/version-2.5.1-blue?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/releases)
+[![Version](https://img.shields.io/badge/version-2.6.0-blue?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-160%20passing-brightgreen?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect/actions)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square)](https://github.com/BayramAnnakov/claude-reflect#platform-support)
@@ -396,6 +396,11 @@ After:
 5. **Discover skills monthly** - Run `/reflect-skills --days 30` monthly to find automation opportunities you might have missed
 
 6. **Skills get smarter** - When you correct Claude during a skill, that correction can be routed back to the skill file itself via `/reflect`
+
+7. **Extend session retention** - Claude Code deletes local sessions after 30 days by default. Since claude-reflect relies on session history for `/reflect --scan-history` and `/reflect-skills`, extend this in `~/.claude/settings.json`:
+   ```json
+   { "cleanupPeriodDays": 99999 }
+   ```
 
 ## Contributing
 
